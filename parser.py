@@ -1,35 +1,24 @@
-import json
-import io
 import os
-import sys
-import re
-import fitz  
-import matplotlib.pyplot as plt
+import io
+import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from io import BytesIO
-from PyPDF2 import PdfFileReader, PdfFileWriter
-from PyPDF2.generic import RectangleObject
-import tempfile
+import fitz  
 import shutil
 import shlex
 import ghostscript
-from pdf2image import convert_from_path
 from PIL import Image
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import img_to_array
-from tensorflow.keras.applications.imagenet_utils import preprocess_input
-
-import cv2
-from sklearn.cluster import KMeans
-
-
 import torch
 from PIL import Image
 from torchvision import transforms
+
+from define_template import open_pdf_and_define_coordinates, save_template
+from img_transform import pdf_to_images
+from clean_data import clean_extracted_data
+
 
 
 
@@ -41,67 +30,6 @@ from torchvision import transforms
 # pip install PyMuPDF numpy tensorflow tensorflow-io-gcs-filesystem easyocr torchvision opencv-python-headless
 # pip install matplotlib google-api-python-client PyPDF2 ghostscript pdf2image
 
-
-# Define a template on the PDF
-def open_pdf_and_define_coordinates(pdf_file):
-    print("Opening PDF viewer...")
-    print("Click on two points to define a rectangular field (top-left corner and bottom-right corner).")
-
-    coordinates = []
-    field_names = []
-
-    def on_click(event):
-        nonlocal coordinates
-        x, y = event.xdata, event.ydata
-        print(f"Clicked at {x}, {y}")
-        coordinates.append((x, y))
-        if len(coordinates) % 2 == 0:
-            print("Two points selected.")
-            field_name = input("Enter field name: ")
-            field_names.append(field_name)
-            print("Press 'Enter' to finish or 'c' to continue adding fields.")
-            action = input()
-            if action.lower() == 'c':
-                print("Click on two points to define the next rectangular field.")
-            else:
-                plt.close()
-
-    doc = fitz.open(pdf_file)
-    page = doc[0]
-    zoom = 4
-    mat = fitz.Matrix(zoom, zoom)
-    pixmap = page.get_pixmap(matrix=mat)
-    with tempfile.NamedTemporaryFile(suffix=".png") as temp_file:
-        pixmap.save(temp_file.name, "png")
-        image = plt.imread(temp_file.name)
-
-    fig, ax = plt.subplots()
-    ax.imshow(image)
-    fig.canvas.mpl_connect("button_press_event", on_click)
-    plt.show()
-
-    if len(coordinates) % 2 != 0:
-        print("Error: Odd number of clicks. Exiting.")
-        sys.exit(1)
-
-    fields = []
-    for i in range(len(coordinates) // 2):
-        x1, y1 = coordinates[2 * i]
-        x2, y2 = coordinates[2 * i + 1]
-        x = min(x1, x2) / zoom
-        y = min(y1, y2) / zoom
-        w = abs(x1 - x2) / zoom
-        h = abs(y1 - y2) / zoom
-        fields.append(
-            {"name": field_names[i],
-             "coordinates": {"x": x, "y": y, "w": w, "h": h}}
-        )
-    return {"fields": fields}
-
-
-def save_template(template, template_file):
-    with open(template_file, "w") as f:
-        json.dump(template, f, indent=4)
 def load_template(template_file):
     with open(template_file, 'r') as f:
         template = json.load(f)
@@ -147,8 +75,6 @@ def split_pdf(pdf_file, template):
             output_pdfs[field["name"]] = output_stream
 
     return output_pdfs
-
-
 
 def save_pdfs_to_files(output_pdfs):
     file_paths = {}
@@ -234,90 +160,17 @@ def extract_content_from_google_docs(credentials_file, doc_ids):
     print("Content extracted from Google Docs.")
     return extracted_data
 
-# For the manual writing, we will convert it to image
-def pdf_to_images(pdf_file):
-    images = convert_from_path(pdf_file)
-
-    images_as_bytes = []
-
-    for image in images:
-        img_bytes = io.BytesIO()
-        image.save(img_bytes, format='JPEG')
-        
-        cropped_image_path = "./temp_cropped_image.jpeg"
-        with open("temp_image.jpeg", "wb") as f:
-            f.write(img_bytes.getvalue())
-        crop_central_line("temp_image.jpeg", cropped_image_path)
-        # os.remove("temp_image.jpeg")
-
-        with open(cropped_image_path, "rb") as f:
-            cropped_img_bytes = f.read()
-        # os.remove(cropped_image_path)
-
-        images_as_bytes.append(cropped_img_bytes)
-
-    return images_as_bytes
-
-# For the manual writing, we will crop it
-def crop_central_line(image_path, output_path, padding=5, debug=False):
-    # Load the image using OpenCV
-    img = cv2.imread(image_path)
-
-    # Convert the image to grayscale
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # Apply a binary threshold to create a mask
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-
-    # Find contours in the binary image
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Calculate the bounding boxes of the contours
-    bounding_boxes = [cv2.boundingRect(cnt) for cnt in contours]
-
-    # Calculate the y-coordinate of the center of each bounding box
-    centers_y = [y + h//2 for _, y, _, h in bounding_boxes]
-
-    # Apply k-means clustering to group the elements based on their y-coordinate centers
-    kmeans = KMeans(n_clusters=3, n_init=10, random_state=0).fit(np.array(centers_y).reshape(-1, 1))
-
-    # Find the cluster labels and sort them based on the cluster centers
-    sorted_labels = sorted(range(3), key=lambda i: kmeans.cluster_centers_[i])
-
-    if len(sorted_labels) == 2:
-        # If there are only 2 clusters, assume the central line is the one with the highest y-coordinate (i.e., the second line)
-        median_label = sorted_labels[1]
-    else:
-        # Otherwise, find the cluster label corresponding to the median y-coordinate
-        median_label = sorted_labels[1]
-
-    # Get the bounding boxes belonging to the central line
-    central_line_bboxes = [bbox for bbox, label in zip(bounding_boxes, kmeans.labels_) if label == median_label]
-
-    # Save an image with bounding boxes drawn for debugging
-    if debug:
-        img_with_bboxes = img.copy()
-        for x, y, w, h in central_line_bboxes:
-            cv2.rectangle(img_with_bboxes, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        cv2.imwrite('./test/debug_image_with_bboxes.jpeg', img_with_bboxes)
-
-    # Find the minimum and maximum x-coordinates and y-coordinates of the elements in the central line
-    min_x = min([x for x, _, _, _ in central_line_bboxes])
-    max_x = max([x + w for x, _, w, _ in central_line_bboxes])
-    min_y = min([y for _, y, _, _ in central_line_bboxes])
-    max_y = max([y + h for _, y, _, h in central_line_bboxes])
-
-    # Extract the corresponding region with optional padding
-    cropped_img = img[min_y - padding:max_y + padding, min_x - padding:max_x + padding]
-
-    # Save the cropped image
-    cv2.imwrite(output_path, cropped_img)
-
 
 # For the manual writing, we extract it with a trained model
-def extract_text_torch_hub(image, model_name='vitstr'):
+def extract_text_torch_hub(image, multiple_rectangles):
         # https://huggingface.co/spaces/baudm/PARSeq-OCR
     # Load model and image transforms
+    print(f"multiple boxes: {multiple_rectangles}")
+    if multiple_rectangles[0]:
+        model_name='parseq_tiny'
+    else:
+        model_name='vitstr'
+    print(f"model name: {model_name}")    
     parseq = torch.hub.load('baudm/parseq', model_name, pretrained=True).eval()
     img_transform = transforms.Compose([
     transforms.Resize(parseq.hparams.img_size),
@@ -348,40 +201,7 @@ def extract_text_torch_hub(image, model_name='vitstr'):
     return label[0]
 
 
-def clean_extracted_data(extracted_data):
 
-    cleaned_data = {}
-
-    for field, text in extracted_data.items():
-
-        if field == "Numero contrat":
-            cleaned_text = re.sub(r'(?<![0-9a-zA-Z])\W(?![0-9a-zA-Z])', '', text)
-
-        elif field == "Poids net":
-            cleaned_text = ''.join(re.findall(r'\d', text))[:5]
-
-        elif field == "Date de sortie" or field == "Date entree":
-            cleaned_text = re.search(r'\d{2}/\d{2}/\d{4}', text)
-            if cleaned_text:
-                cleaned_text = cleaned_text.group(0)
-            else:
-                cleaned_text = ""
-
-        elif field == "Produit":
-            cleaned_text = text.split()[0]
-
-        elif field == "Type":
-            cleaned_text = "RECEPTION" if re.search(r'ЕСЕРТІON', text, re.IGNORECASE) else text
-
-        elif field == "Ticket number":
-            cleaned_text = ''.join(re.findall(r'\d', text))[:5]
-
-        else:
-            cleaned_text = text
-
-        cleaned_data[field] = cleaned_text
-
-    return cleaned_data
 
 # Get the data into Excel
   
@@ -399,11 +219,12 @@ def main(pdf_file, template_file, credentials_file):
     extracted_data = extract_content_from_google_docs(credentials_file, doc_ids)
 
     # Extract the Silos field using extract_text_torch_hub
+    # The model for torch_hub is different if there are several objects detected
     if 'Silos' in file_paths:
-        images_as_bytes = pdf_to_images(file_paths['Silos'])
+        images_as_bytes, multiple_rectangles = pdf_to_images(file_paths['Silos'])
         extracted_texts = []
         for image in images_as_bytes:
-            extracted_texts.append(extract_text_torch_hub(image))
+            extracted_texts.append(extract_text_torch_hub(image, multiple_rectangles))
         flat_list = [item for sublist in extracted_texts for item in sublist]
         extracted_data['Silos'] = ' '.join(flat_list)
 
@@ -430,9 +251,8 @@ def main(pdf_file, template_file, credentials_file):
 
 
 
-
 if __name__ == "__main__":
-    pdf_file = "./data/sample6.pdf"
+    pdf_file = "./data/sample3.pdf"
     file_path = "./data/sample.xlsx"
     template_file = "template.json"
     credentials_file = "googlecredentials.json"

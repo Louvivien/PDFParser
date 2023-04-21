@@ -2,54 +2,6 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-
-import cv2
-import numpy as np
-
-def detect_border_touching_objects(image):
-    # Method 3: Use distance transform to find objects touching the border
-    
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    cv2.imwrite('./test/gray.jpeg', gray)
-    
-    # Thresholding
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    cv2.imwrite('./test/thresh.jpeg', thresh)
-    
-    # Find contours of objects
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Create a mask covering objects touching the image boundaries
-    mask = np.zeros_like(gray)
-    for cnt in contours:
-        _, _, w, h = cv2.boundingRect(cnt)
-        if w == image.shape[1] or h == image.shape[0]:
-            cv2.drawContours(mask, [cnt], -1, 255, cv2.FILLED)
-    cv2.imwrite('./test/mask.jpeg', mask)
-    
-    # Inverse the colors of the mask
-    mask_inv = cv2.bitwise_not(mask)
-    cv2.imwrite('./test/mask_inv.jpeg', mask_inv)
-    
-    # Get the black white
-    bw = cv2.cvtColor(mask_inv, cv2.COLOR_GRAY2BGR)
-    cv2.imwrite('./test/bw.jpeg', bw)
-    
-    # Get the white opaque
-    alpha = mask_inv.copy()
-    alpha[alpha > 0] = 255
-    alpha = cv2.cvtColor(alpha, cv2.COLOR_GRAY2BGR)
-    cv2.imwrite('./test/alpha.jpeg', alpha)
-    
-    # Add the opaque image to the original image
-    img_with_mask = cv2.addWeighted(image, 1, alpha, 1, 0)
-    cv2.imwrite('./test/img_with_mask.jpeg', img_with_mask)
-    
-    # Return the image with mask
-    return img_with_mask
-
-
 def crop_central_line(image_path, output_path, padding=0, debug=True):
     # Load the image using OpenCV
     img = cv2.imread(image_path)
@@ -101,13 +53,11 @@ def crop_central_line(image_path, output_path, padding=0, debug=True):
     # Extract the corresponding region with optional padding
     cropped_img = img[min_y - padding:max_y + padding, min_x - padding:max_x + padding]
 
-    img_with_mask = detect_border_touching_objects(cropped_img)
-
     # Save the cropped image
-    cv2.imwrite(output_path, img_with_mask)
+    cv2.imwrite(output_path, cropped_img)
 
 # Set the input and output paths
-image_path = 'temp_image.jpeg'
+image_path = './test/temp_image.jpeg'
 output_path = './test/output.jpeg'
 
 # Set optional padding (in pixels)
