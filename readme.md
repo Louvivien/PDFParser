@@ -12,9 +12,9 @@ You may want to run the python files in a virtual environment
 
 
 
-### Install
+### To Do
 
-Fix manual writing issue
+Check with all test files
 
 Integrate to Excel
 

@@ -14,12 +14,11 @@ from PIL import Image
 import torch
 from PIL import Image
 from torchvision import transforms
+import glob
 
 from define_template import open_pdf_and_define_coordinates, save_template
 from img_transform import pdf_to_images
 from clean_data import clean_extracted_data
-
-
 
 
 
@@ -197,15 +196,17 @@ def extract_text_torch_hub(image, multiple_rectangles):
     max_len = 25 if model_name == 'crnn' else len(label[0]) + 1
     conf = list(map('{:0.1f}'.format, raw_confidence[0][:max_len].tolist()))
     print(f"output: {label[0]} raw_confidence:{[raw_label[0][:max_len], conf]}")
-    print(raw_label[0][0])
-    return label[0]
-
+    if multiple_rectangles[0]:
+        print(label[0])
+        return label[0]
+    else:
+        print(raw_label[0][0])
+        return raw_label[0][0]
 
 
 
 # Get the data into Excel
   
-
 
 def main(pdf_file, template_file, credentials_file):
     # template = open_pdf_and_define_coordinates(pdf_file)
@@ -218,7 +219,7 @@ def main(pdf_file, template_file, credentials_file):
     doc_ids = convert_to_google_docs(credentials_file, uploaded_files)
     extracted_data = extract_content_from_google_docs(credentials_file, doc_ids)
 
-    # Extract the Silos field using extract_text_torch_hub
+    # Extract the manual writing field using extract_text_torch_hub
     # The model for torch_hub is different if there are several objects detected
     if 'Silos' in file_paths:
         images_as_bytes, multiple_rectangles = pdf_to_images(file_paths['Silos'])
@@ -250,13 +251,56 @@ def main(pdf_file, template_file, credentials_file):
         print(f"{name}: {text}")
 
 
-
 if __name__ == "__main__":
-    pdf_file = "./data/sample3.pdf"
+    pdf_file = "./data/sample6.pdf"
+    # pdf_file = "./data/test/TP23347.pdf"
     file_path = "./data/sample.xlsx"
     template_file = "template.json"
     credentials_file = "googlecredentials.json"
     main(pdf_file, template_file, credentials_file)
+
+
+# def main(pdf_files, template_file, credentials_file):
+#     all_extracted_data = {}
+
+#     for pdf_file in pdf_files:
+#         print(f"Processing {pdf_file}")
+        
+#         template = load_template(template_file)
+#         output_pdfs = split_pdf(pdf_file, template)
+#         file_paths = save_pdfs_to_files(output_pdfs)
+#         uploaded_files = upload_to_google_drive(credentials_file, file_paths)
+#         doc_ids = convert_to_google_docs(credentials_file, uploaded_files)
+#         extracted_data = extract_content_from_google_docs(credentials_file, doc_ids)
+
+#         if 'Silos' in file_paths:
+#             images_as_bytes, multiple_rectangles = pdf_to_images(file_paths['Silos'])
+#             extracted_texts = []
+#             for image in images_as_bytes:
+#                 extracted_texts.append(extract_text_torch_hub(image, multiple_rectangles))
+#             flat_list = [item for sublist in extracted_texts for item in sublist]
+#             extracted_data['Silos'] = ' '.join(flat_list)
+
+#         cleaned_extracted_data = clean_extracted_data(extracted_data)
+#         all_extracted_data[pdf_file] = cleaned_extracted_data
+
+#         delete_files_from_google_drive(credentials_file, uploaded_files)
+
+#     return all_extracted_data
+
+# if __name__ == "__main__":
+#     test_directory = "./data/test/"
+#     pdf_files = glob.glob(os.path.join(test_directory, "*.pdf"))
+#     template_file = "template.json"
+#     credentials_file = "googlecredentials.json"
+#     extracted_data = main(pdf_files, template_file, credentials_file)
+
+#     print("\nExtracted Data:")
+#     for pdf_file, data in extracted_data.items():
+#         print(f"File: {pdf_file}")
+#         for name, text in data.items():
+#             print(f"{name}: {text}")
+#         print()
 
 
 

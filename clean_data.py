@@ -29,6 +29,16 @@ def clean_extracted_data(extracted_data):
         elif field == "Ticket number":
             cleaned_text = ''.join(re.findall(r'\d', text))[:5]
 
+        elif field == "Adresse client":
+            cleaned_text = re.sub(r'[^a-zA-Z0-9,.]', ' ', text).strip()
+            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+
+        elif field == "Client":
+            cleaned_text = re.sub(r'[^a-zA-Z]', '', text)
+
+        elif field == "Fournisseur":
+            cleaned_text = text.split('\n', 1)[0]
+
         else:
             cleaned_text = text
 
