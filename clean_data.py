@@ -39,6 +39,16 @@ def clean_extracted_data(extracted_data):
         elif field == "Fournisseur":
             cleaned_text = text.split('\n', 1)[0]
 
+        elif field == "Silos":
+            cleaned_text = re.sub(r'(?<=\d)[\s,]*(?=\d)', ', ', text)
+
+        elif field == "Immatriculation camion":
+            lines = text.split('\n')
+            if len(lines) > 1 and re.fullmatch(r'\d{5}', lines[0]):
+                cleaned_text = lines[1]
+            else:
+                cleaned_text = text
+
         else:
             cleaned_text = text
 

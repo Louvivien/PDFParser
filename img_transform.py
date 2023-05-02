@@ -83,21 +83,19 @@ def crop_central_line(image_path, output_path):
     # Print the y-coordinates of the lines
     print("Y-coordinates of the lines:", line_y_coordinates)
 
-
-
+    # Y-coordinates of the lines: [36, 107, 152]
 
     if detected_rows == 1:
         cropped_img = img.copy()
     elif detected_rows == 2:
         first_line_y = line_y_coordinates[0]
         print(f"y = {first_line_y}")
-        # y = 58
         cropped_img = img[:first_line_y, :]
     elif detected_rows == 3:
         first_line_y = line_y_coordinates[0]
         second_line_y = line_y_coordinates[1]
-        third_line_y = line_y_coordinates[2]
-        cropped_img = img[second_line_y, third_line_y]
+        cropped_img = img[first_line_y:second_line_y, :]
+
     else:
         print(f"Error: Unexpected number of detected rows ({detected_rows}).")
         return None
@@ -123,8 +121,8 @@ def crop_central_line(image_path, output_path):
     bounding_boxes = [cv2.boundingRect(cnt) for cnt in contours2]
 
     # Set the minimum width and height threshold for the bounding boxes
-    min_width = 20
-    min_height = 20
+    min_width = 25
+    min_height = 25
 
     # Filter the bounding boxes based on the threshold
     filtered_bboxes = [bbox for bbox in bounding_boxes if bbox[2] > min_width and bbox[3] > min_height]
@@ -133,29 +131,42 @@ def crop_central_line(image_path, output_path):
     # Calculate the y-coordinate of the center of each bounding box
     centers_y = [y + h//2 for _, y, _, h in filtered_bboxes]
 
-    if len(filtered_bboxes) == 1:
+    print(f"len filtered_bboxes: ({len(filtered_bboxes)})")
+    print(f"detected_rows: ({detected_rows})")
+    print(f"len centers_y: ({len(centers_y)})")
+
+
+    if len(filtered_bboxes) == 0:
+        cropped_img_with_mask = img_with_mask
+    elif len(filtered_bboxes) == 1:
+        cropped_img_with_mask = img_with_mask
+    elif detected_rows  >= 2:
         cropped_img_with_mask = img_with_mask
     else:
         # Apply k-means clustering to group the elements based on their y-coordinate centers
-        kmeans = KMeans(n_clusters=detected_rows, n_init=10, random_state=0).fit(np.array(centers_y).reshape(-1, 1))
+        n_clusters = min(detected_rows, len(np.unique(centers_y)))
+        kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(np.array(centers_y).reshape(-1, 1))
 
         # Find the cluster labels and sort them based on the cluster centers
-        sorted_labels = sorted(range(detected_rows), key=lambda i: kmeans.cluster_centers_[i])
+        if len(np.unique(kmeans.labels_)) < detected_rows:
+            detected_rows = len(np.unique(kmeans.labels_))
+            sorted_labels = sorted(range(detected_rows), key=lambda i: kmeans.cluster_centers_[i])
+        else:
+            sorted_labels = sorted(range(detected_rows), key=lambda i: kmeans.cluster_centers_[i])
 
-        # Determine the median label
-        if detected_rows == 1:
-            median_label = sorted_labels[0]
-        elif detected_rows == 2:
-            median_label = sorted_labels[1]
-        elif detected_rows == 3:
+        print(f"sorted_labels: ({sorted_labels})")
+        print(f"len sorted_label: ({len(sorted_labels)})")
+
+        if len(sorted_labels) >= 2:
+            # If there are at least 2 clusters, assume the central line is the one with the highest y-coordinate (i.e., the second line)
             median_label = sorted_labels[1]
         else:
-            print("Error: Unexpected number of detected rows.")
-            return None
-        
-        # Get the bounding boxes belonging to the target line
-        central_line_bboxes = [bbox for bbox, label in zip(filtered_bboxes, kmeans.labels_) if label == median_label]
+            # If there is only one cluster, use it as the median_label
+            median_label = sorted_labels[0]
 
+
+        # Get the bounding boxes belonging to the central line
+        central_line_bboxes = [bbox for bbox, label in zip(filtered_bboxes, kmeans.labels_) if label == median_label]
 
         # Save an image with bounding boxes drawn for debugging
         img_with_bboxes = img_with_mask.copy()

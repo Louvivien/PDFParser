@@ -252,8 +252,8 @@ def main(pdf_file, template_file, credentials_file):
 
 
 if __name__ == "__main__":
-    pdf_file = "./data/sample6.pdf"
-    # pdf_file = "./data/test/TP23347.pdf"
+    # pdf_file = "./data/sample6.pdf"
+    pdf_file = "./data/test/TP23347.pdf"
     file_path = "./data/sample.xlsx"
     template_file = "template.json"
     credentials_file = "googlecredentials.json"
